@@ -7,15 +7,18 @@ use fonts::Fonts;
 mod fonts;
 mod slider;
 
+mod workflow_bar;
+
 use crate::{images::Images, windows::PrimaryCamera};
 
 pub fn plugin(app: &mut App) {
-    app.add_plugins(slider::plugin).add_systems(
-        Startup,
-        create_ui
-            .after(crate::images::Setup)
-            .after(crate::windows::Setup),
-    );
+    app.add_plugins((slider::plugin, workflow_bar::plugin))
+        .add_systems(
+            Startup,
+            create_ui
+                .after(crate::images::Setup)
+                .after(crate::windows::Setup),
+        );
 }
 
 fn create_ui(
@@ -27,6 +30,21 @@ fn create_ui(
 ) {
     let fonts = Fonts::new(&asset_server);
 
+    let workflow_bar = commands.spawn(workflow_bar::bundle()).id();
+
+    commands
+        .spawn((
+            UiTargetCamera(*primary_camera),
+            Node {
+                width: percent(100),
+                height: percent(100),
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+        ))
+        .add_children(&[workflow_bar]);
+
+    /*
     commands
         .spawn((
             UiTargetCamera(*primary_camera),
@@ -100,6 +118,7 @@ fn create_ui(
                 }
             });
         });
+    */
 
     // TODO: Add sliders above images for changing width of images and all that. https://bevy.org/examples/ui-user-interface/vertical-slider/
 
