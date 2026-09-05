@@ -1,28 +1,16 @@
 use bevy::{
     color::palettes::css::{BLUE, DARK_GREY},
-    input_focus::{InputDispatchPlugin, tab_navigation::TabNavigationPlugin},
     prelude::*,
-    ui_widgets::{UiWidgetsPlugins, observe, slider_self_update},
 };
 use fonts::Fonts;
 
 mod fonts;
 mod slider;
 
-use crate::{
-    images::Images,
-    ui::slider::{ValueLabel, horizontal_slider},
-    windows::PrimaryCamera,
-};
+use crate::{images::Images, windows::PrimaryCamera};
 
 pub fn plugin(app: &mut App) {
-    app.add_plugins((
-        //UiWidgetsPlugins,
-        //InputDispatchPlugin,
-        //TabNavigationPlugin,
-        slider::plugin,
-    ))
-    .add_systems(
+    app.add_plugins(slider::plugin).add_systems(
         Startup,
         create_ui
             .after(crate::images::Setup)
@@ -69,7 +57,7 @@ fn create_ui(
                 .with_children(|root| {
                     let label = root.spawn(fonts.body("Default text!")).id();
 
-                    //root.spawn(horizontal_slider());
+                    root.spawn(slider::horizontal_slider("Test"));
                 });
             });
 
