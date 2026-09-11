@@ -7,7 +7,7 @@ use bevy::{
 pub fn plugin(app: &mut App) {
     app.add_systems(Startup, create_windows.in_set(Setup));
 }
-crate::setup!();
+crate::system_set!(Setup);
 
 #[derive(Component)]
 pub struct PrimaryCamera;

@@ -9,17 +9,20 @@ mod slider;
 
 mod workflow_bar;
 
-use crate::{images::Images, windows::PrimaryCamera};
+use crate::{images::Images, system_set, windows::PrimaryCamera};
 
 pub fn plugin(app: &mut App) {
-    app.add_plugins((slider::plugin, workflow_bar::plugin))
+    app.add_plugins((fonts::plugin, slider::plugin, workflow_bar::plugin))
         .add_systems(
             Startup,
             create_ui
                 .after(crate::images::Setup)
-                .after(crate::windows::Setup),
+                .after(crate::windows::Setup)
+                .after(crate::ui::InnerUiSetup),
         );
 }
+
+system_set!(InnerUiSetup);
 
 fn create_ui(
     mut commands: Commands,
@@ -27,11 +30,9 @@ fn create_ui(
     primary_camera: Single<Entity, With<PrimaryCamera>>,
     secondary_cameras: Query<Entity, (With<Camera>, Without<PrimaryCamera>)>,
     images: Res<Images>,
+    workflow_bar: Single<Entity, With<workflow_bar::Root>>,
+    fonts: Res<Fonts>,
 ) {
-    let fonts = Fonts::new(&asset_server);
-
-    let workflow_bar = commands.spawn(workflow_bar::bundle()).id();
-
     commands
         .spawn((
             UiTargetCamera(*primary_camera),
@@ -42,7 +43,7 @@ fn create_ui(
                 ..default()
             },
         ))
-        .add_children(&[workflow_bar]);
+        .add_children(&[*workflow_bar]);
 
     /*
     commands
