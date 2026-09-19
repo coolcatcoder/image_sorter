@@ -1,11 +1,11 @@
-use std::marker::PhantomData;
+use std::fmt::Debug;
 
 use bevy::{
-    color::palettes::css::{BLACK, RED},
-    ecs::system::SystemId,
+    color::palettes::css::BLACK,
     prelude::*,
     ui_widgets::popover::{Popover, PopoverAlign, PopoverPlacement, PopoverSide},
 };
+use unkindness::prelude::Else;
 
 use crate::{
     bundle_effect,
@@ -17,7 +17,6 @@ use crate::{
 
 pub fn plugin(app: &mut App) {
     app.add_systems(Startup, spawn.in_set(InnerUiSetup))
-        .add_systems(Update, button_interaction)
         .add_observer(popover_closer);
 }
 
@@ -39,11 +38,6 @@ pub fn spawn(mut commands: Commands, fonts: Res<Fonts>) {
             .id()
     });
 
-    let workflow = commands
-        .spawn((Text::new("Workflow"), Font::WorkflowBar))
-        .id();
-    let workflow = commands.spawn(workflow_bar_item()).add_child(workflow).id();
-
     let mut bar = commands.spawn((
         Root,
         BackgroundColor(BLACK.into()),
@@ -57,40 +51,33 @@ pub fn spawn(mut commands: Commands, fonts: Res<Fonts>) {
         },
     ));
 
-    bar.add_children(&buttons)
-        .add_child(workflow)
-        .with_child(Button(
-            "Tester!",
-            |In(entity): In<Entity>, mut commands: Commands| {
-                info!("Pressed!");
-                commands.spawn((
-                    ChildOf(entity),
-                    OverrideClip,
-                    Popover {
-                        positions: [PopoverPlacement {
-                            side: PopoverSide::Bottom,
-                            align: PopoverAlign::Start,
-                            gap: 1.,
-                        }]
-                        .into(),
-                        window_margin: 0.,
-                    },
-                    BackgroundColor(BLACK.into()),
-                    Node {
-                        width: px(50),
-                        height: px(100),
-                        ..default()
-                    },
-                ));
-            },
-        ));
+    bar.add_children(&buttons);
 
-    bar.with_child(Button(
-        "Incredible!",
-        |In(entity): In<Entity>, mut commands: Commands| {
-            commands.spawn(Dropdown(entity));
-        },
-    ));
+    bar.with_children(|commands| {
+        commands.spawn(ButtonNew("Last.")).observe(
+            // Consider a custom ButtonPressed event to automatically opt-out of bubbling. It might
+            // even be nice for disabling buttons from being pressed when there is a popup.
+            |on: On<Pointer<Click>>, mut commands: Commands| {
+                if on.entity != on.original_event_target() {
+                    return;
+                }
+
+                info!("Clicked new.");
+                let dropdown = commands.spawn(Dropdown(on.entity)).id();
+                let _button = commands
+                    .spawn((ChildOf(dropdown), ButtonNew("Sub-button.")))
+                    .observe(|on: On<Pointer<Click>>, mut commands: Commands| {
+                        if on.entity != on.original_event_target() {
+                            return;
+                        }
+
+                        info!("Sub-button pressed.");
+                        let _dropdown = commands.spawn(Dropdown(on.entity)).id();
+                    })
+                    .id();
+            },
+        );
+    });
 }
 
 struct Dropdown(Entity);
@@ -119,71 +106,40 @@ impl Dropdown {
     }
 }
 
-struct Button<F: IntoSystem<In<Entity>, (), M> + 'static, M>
-where
-    Self: Send + Sync + 'static,
-{
-    text: &'static str,
-    system: F,
-    phantom_data: PhantomData<M>,
-}
-#[allow(nonstandard_style)]
-fn Button<F: IntoSystem<In<Entity>, (), M> + 'static, M>(
-    text: &'static str,
-    system: F,
-) -> Button<F, M>
-where
-    Button<F, M>: Send + Sync + 'static,
-{
-    Button {
-        text,
-        system,
-        phantom_data: PhantomData,
-    }
-}
-bundle_effect!(impl<F: IntoSystem<In<Entity>, (), M> + 'static, M> Effect for Button<F, M> where Self: Send + Sync + 'static);
-impl<F: IntoSystem<In<Entity>, (), M> + 'static, M> Button<F, M>
-where
-    Self: Send + Sync + 'static,
-{
+struct ButtonNew(&'static str);
+bundle_effect!(impl Effect for ButtonNew);
+impl ButtonNew {
     fn effect(In((entity, button)): In<(Entity, Self)>, mut commands: Commands) {
-        let system_id = commands.register_system(button.system);
+        fn observer<E: Debug + Clone + Reflect>(
+            colour: impl Into<Color>,
+        ) -> impl Fn(On<Pointer<E>>, Query<&mut BackgroundColor>) {
+            let colour = colour.into();
+            move |on: On<Pointer<E>>, mut background_colour: Query<&mut BackgroundColor>| {
+                background_colour.get_mut(on.entity).else_error()?.0 = colour;
+            }
+        }
+
+        let on_colour = BLACK.lighter(0.03);
+        let off_colour = BLACK;
+
         commands
             .entity(entity)
             .insert((
-                ButtonSystem(system_id),
-                Interaction::None,
                 Node {
                     height: percent(85),
                     ..default()
                 },
                 BackgroundColor::default(),
             ))
-            .with_child((Text::new(button.text), Font::WorkflowBar));
-    }
-}
-
-#[derive(Component)]
-struct ButtonSystem(SystemId<In<Entity>, ()>);
-fn button_interaction(
-    interaction: Query<
-        (Entity, &Interaction, &ButtonSystem, &mut BackgroundColor),
-        Changed<Interaction>,
-    >,
-    mut commands: Commands,
-) {
-    for (entity, interaction, button_system, mut background_colour) in interaction {
-        match *interaction {
-            Interaction::None => background_colour.0 = BLACK.into(),
-            Interaction::Hovered => background_colour.0 = BLACK.lighter(0.03).into(),
-            Interaction::Pressed => commands.run_system_with(button_system.0, entity),
-        }
+            .observe(observer::<Enter>(on_colour))
+            .observe(observer::<Leave>(off_colour))
+            .with_child((Text::new(button.0), Font::WorkflowBar));
     }
 }
 
 fn popover_closer(
     on: On<Pointer<Click>>,
-    popover: Query<(Entity, Option<&ChildOf>), With<Popover>>,
+    popover: Query<Entity, With<Popover>>,
     child_of: Query<&ChildOf>,
     ignore: Query<AnyOf<(&Window,)>>,
     mut commands: Commands,
@@ -194,15 +150,7 @@ fn popover_closer(
     }
 
     // If the popover isn't an ancestor of the clicked entity, then close it.
-    'popover: for (popover, popover_parent) in popover {
-        // If the entity clicked is the popover's parent then it is probably the button that opened
-        // it. Closing it as soon as it opens is silly, and this should avoid that.
-        if let Some(popover_parent) = popover_parent
-            && popover_parent.0 == on.entity
-        {
-            continue 'popover;
-        }
-
+    'popover: for popover in popover {
         for ancestor in [on.entity]
             .into_iter()
             .chain(child_of.iter_ancestors(on.entity))
@@ -215,14 +163,4 @@ fn popover_closer(
         info!("Closed");
         commands.entity(popover).try_despawn();
     }
-}
-
-fn workflow_bar_item() -> impl Bundle {
-    (
-        Node {
-            height: percent(85),
-            ..default()
-        },
-        BackgroundColor(BLACK.lighter(0.03).into()),
-    )
 }
